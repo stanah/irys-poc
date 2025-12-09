@@ -2,39 +2,44 @@ import { LitNodeClient } from "@lit-protocol/lit-node-client";
 import { LitNetwork } from "@lit-protocol/constants";
 import { encryptFile, decryptToUint8Array } from "@lit-protocol/encryption";
 import { SiweMessage } from "siwe";
+import type { WalletClient } from "viem";
 
 export class LitService {
   private client: LitNodeClient;
   public chain: string;
 
-  constructor(chain: string = "amoy") {
+  constructor(chain: string = "polygon") {
     this.chain = chain;
     this.client = new LitNodeClient({
       litNetwork: LitNetwork.DatilDev,
-      debug: false
+      debug: false,
     });
   }
 
   async connect() {
     if (!this.client.ready) {
-        await this.client.connect();
+      await this.client.connect();
     }
   }
 
-  async getAuthSig(address: string, signer: any): Promise<any> {
-    // Ensure chainId matches the chain we are using (Amoy = 80002)
+  async getAuthSig(address: string, walletClient: WalletClient): Promise<any> {
+    // Create SIWE message
     const siweMessage = new SiweMessage({
       domain: window.location.host,
       address: address,
       statement: "Sign in with Ethereum to the app.",
       uri: window.location.origin,
       version: "1",
-      chainId: 80002, 
+      chainId: 137, // Polygon mainnet chain ID for Lit
     });
 
     const messageToSign = siweMessage.prepareMessage();
-    // Signer from Account Kit (viem) uses signMessage({ message })
-    const signature = await signer.signMessage({ message: messageToSign });
+
+    // Sign with MetaMask via viem wallet client
+    const signature = await walletClient.signMessage({
+      account: address as `0x${string}`,
+      message: messageToSign,
+    });
 
     return {
       sig: signature,
@@ -46,28 +51,39 @@ export class LitService {
 
   async encryptFile(file: File, accessControlConditions: any[], authSig: any) {
     await this.connect();
-    const result = await encryptFile({
+    const result = await encryptFile(
+      {
         file,
         accessControlConditions,
         chain: this.chain,
-        authSig
-    }, this.client);
-    
-    return result; 
+        authSig,
+      },
+      this.client
+    );
+
+    return result;
   }
 
-  async decryptFile(ciphertext: string, dataToEncryptHash: string, accessControlConditions: any[], authSig: any) {
+  async decryptFile(
+    ciphertext: string,
+    dataToEncryptHash: string,
+    accessControlConditions: any[],
+    authSig: any
+  ) {
     await this.connect();
-    const result = await decryptToUint8Array({
+    const result = await decryptToUint8Array(
+      {
         ciphertext,
         dataToEncryptHash,
         accessControlConditions,
         chain: this.chain,
-        authSig
-    }, this.client);
-    
+        authSig,
+      },
+      this.client
+    );
+
     return result;
   }
 }
 
-export const litService = new LitService("amoy");
+export const litService = new LitService("polygon");
