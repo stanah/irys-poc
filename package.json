@@ -12,6 +12,7 @@
     "@account-kit/infra": "^4.81.2",
     "@account-kit/react": "^4.81.2",
     "@irys/web-upload": "^0.0.15",
+    "@irys/web-upload-ethereum": "^0.0.16",
     "@irys/web-upload-ethereum-viem-v2": "^0.0.17",
     "@lit-protocol/encryption": "^7.3.1",
     "@lit-protocol/lit-node-client": "^7.3.1",

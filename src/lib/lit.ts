@@ -2,7 +2,7 @@ import { LitNodeClient } from "@lit-protocol/lit-node-client";
 import { LitNetwork } from "@lit-protocol/constants";
 import { encryptFile, decryptToUint8Array } from "@lit-protocol/encryption";
 import { SiweMessage } from "siwe";
-import type { WalletClient } from "viem";
+import { type WalletClient, getAddress } from "viem";
 
 export class LitService {
   private client: LitNodeClient;
@@ -23,10 +23,11 @@ export class LitService {
   }
 
   async getAuthSig(address: string, walletClient: WalletClient): Promise<any> {
-    // Create SIWE message
+    // Convert address to checksummed format (EIP-55)
+    const checksumAddress = getAddress(address);
     const siweMessage = new SiweMessage({
       domain: window.location.host,
-      address: address,
+      address: checksumAddress,
       statement: "Sign in with Ethereum to the app.",
       uri: window.location.origin,
       version: "1",
@@ -37,7 +38,7 @@ export class LitService {
 
     // Sign with MetaMask via viem wallet client
     const signature = await walletClient.signMessage({
-      account: address as `0x${string}`,
+      account: checksumAddress as `0x${string}`,
       message: messageToSign,
     });
 
@@ -45,7 +46,7 @@ export class LitService {
       sig: signature,
       derivedVia: "web3.eth.personal.sign",
       signedMessage: messageToSign,
-      address: address,
+      address: checksumAddress,
     };
   }
 

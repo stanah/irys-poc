@@ -17,6 +17,9 @@ importers:
       '@irys/web-upload':
         specifier: ^0.0.15
         version: 0.0.15(arweave@1.15.7)(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      '@irys/web-upload-ethereum':
+        specifier: ^0.0.16
+        version: 0.0.16(arweave@1.15.7)(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       '@irys/web-upload-ethereum-viem-v2':
         specifier: ^0.0.17
         version: 0.0.17(arweave@1.15.7)(bufferutil@4.0.9)(utf-8-validate@5.0.10)

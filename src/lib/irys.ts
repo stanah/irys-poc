@@ -1,6 +1,7 @@
 import { WebUploader } from "@irys/web-upload";
+import { WebEthereum } from "@irys/web-upload-ethereum";
 import { ViemV2Adapter } from "@irys/web-upload-ethereum-viem-v2";
-import { createWalletClient, custom } from "viem";
+import { createWalletClient, createPublicClient, custom } from "viem";
 import { polygonAmoy } from "viem/chains";
 
 export class IrysService {
@@ -10,22 +11,34 @@ export class IrysService {
       throw new Error("MetaMask or compatible wallet is required for uploads");
     }
 
-    // Create a viem wallet client from window.ethereum
+    // Request account access
+    const accounts = (await window.ethereum.request({
+      method: "eth_requestAccounts",
+    })) as string[];
+
+    if (!accounts || accounts.length === 0) {
+      throw new Error("No accounts found");
+    }
+
+    // Create wallet client
     const walletClient = createWalletClient({
+      account: accounts[0] as `0x${string}`,
       chain: polygonAmoy,
       transport: custom(window.ethereum),
     });
 
-    // Request account access
-    await window.ethereum.request({ method: "eth_requestAccounts" });
+    // Create public client
+    const publicClient = createPublicClient({
+      chain: polygonAmoy,
+      transport: custom(window.ethereum),
+    });
 
-    // Connect to Irys Devnet
-    const irys = await WebUploader(ViemV2Adapter as any)
-      .withProvider(walletClient)
-      .withRpc("https://rpc-amoy.polygon.technology")
-      .devnet();
+    // Connect to Irys using the proper adapter pattern
+    const irysUploader = await WebUploader(WebEthereum).withAdapter(
+      ViemV2Adapter(walletClient, { publicClient })
+    );
 
-    return irys;
+    return irysUploader;
   }
 
   async uploadData(data: string, tags: { name: string; value: string }[]) {
@@ -36,7 +49,7 @@ export class IrysService {
     return receipt;
   }
 
-  // Generic query using GraphQL
+  // Generic query using GraphQL - Irys mainnet/testnet
   async queryFiles(recipientAddress: string) {
     const query = `
       query {
@@ -61,14 +74,15 @@ export class IrysService {
       }
     `;
 
-    const response = await fetch("https://devnet.irys.xyz/graphql", {
+    // Try mainnet gateway first, then devnet
+    const response = await fetch("https://uploader.irys.xyz/graphql", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
     });
 
     const json = await response.json();
-    return json.data.transactions.edges;
+    return json.data?.transactions?.edges || [];
   }
 }
 
