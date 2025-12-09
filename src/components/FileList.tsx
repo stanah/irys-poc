@@ -53,8 +53,8 @@ export const FileList = () => {
     if (!address || !walletClient) return;
 
     try {
-      // 1. Fetch data from Irys
-      const response = await fetch(`https://devnet.irys.xyz/${fileId}`);
+      // 1. Fetch data from Irys uploader gateway
+      const response = await fetch(`https://uploader.irys.xyz/${fileId}`);
       const data = await response.json();
       const { encryptedFile, metadata } = data;
 

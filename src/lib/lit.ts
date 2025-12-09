@@ -25,6 +25,11 @@ export class LitService {
   async getAuthSig(address: string, walletClient: WalletClient): Promise<any> {
     // Convert address to checksummed format (EIP-55)
     const checksumAddress = getAddress(address);
+    
+    // Create expiration time (1 hour from now)
+    const now = new Date();
+    const expirationTime = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+    
     const siweMessage = new SiweMessage({
       domain: window.location.host,
       address: checksumAddress,
@@ -32,6 +37,8 @@ export class LitService {
       uri: window.location.origin,
       version: "1",
       chainId: 137, // Polygon mainnet chain ID for Lit
+      issuedAt: now.toISOString(),
+      expirationTime: expirationTime,
     });
 
     const messageToSign = siweMessage.prepareMessage();
