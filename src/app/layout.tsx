@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "@account-kit/react/styles.css";
 import { Providers } from "./providers";
 import { siteConfig } from "@/lib/config";
 

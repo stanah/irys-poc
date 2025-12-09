@@ -11,8 +11,10 @@ export const config = createConfig({
   ssr: true, 
   enablePopupOauth: true,
 }, {
+  // UI configuration - this is required for openAuthModal to work
+  illustrationStyle: "outline",
   auth: {
-    sections: [[{"type": "email"}]],
+    sections: [[{ type: "email" }]],
     addPasskeyOnSignup: true,
   },
 });

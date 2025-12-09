@@ -1,10 +1,9 @@
 "use client";
 
-import { useAuthModal, useUser, useLogout, useSignerStatus } from "@account-kit/react";
+import { AuthCard, useUser, useLogout, useSignerStatus } from "@account-kit/react";
 import { useEffect, useState } from "react";
 
 export const Login = () => {
-  const { openAuthModal } = useAuthModal();
   const user = useUser();
   const { logout } = useLogout();
   const { status } = useSignerStatus();
@@ -14,8 +13,6 @@ export const Login = () => {
   useEffect(() => setMounted(true), []);
 
   if (!mounted) return null;
-
-  const isLoading = status === "INITIALIZING" || status === "AUTHENTICATING_EMAIL" || status === "AUTHENTICATING_PASSKEY";
 
   if (user) {
     return (
@@ -36,13 +33,10 @@ export const Login = () => {
     );
   }
 
+  // Use embedded AuthCard instead of modal
   return (
-    <button
-      onClick={openAuthModal}
-      disabled={isLoading}
-      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {isLoading ? "Connecting..." : "Login with Email"}
-    </button>
+    <div className="w-full max-w-md">
+      <AuthCard />
+    </div>
   );
 };
