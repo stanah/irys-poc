@@ -4,7 +4,18 @@ import { useState } from "react";
 import { useWalletContext } from "@/contexts/WalletContext";
 import { litService } from "@/lib/lit";
 import { irysService } from "@/lib/irys";
-import type { AccessControlConditions } from "@lit-protocol/types";
+// AccessControlConditions type for Lit Protocol
+type AccessControlConditions = Array<
+  | {
+      contractAddress: string;
+      standardContractType: string;
+      chain: string;
+      method: string;
+      parameters: string[];
+      returnValueTest: { comparator: string; value: string };
+    }
+  | { operator: string }
+>;
 
 export const UploadForm = () => {
   const { address, walletClient } = useWalletContext();

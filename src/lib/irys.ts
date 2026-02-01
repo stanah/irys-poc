@@ -44,9 +44,44 @@ export class IrysService {
   async uploadData(data: string, tags: { name: string; value: string }[]) {
     const irys = await this.getWebIrys();
 
-    // Irys Devnet gives free uploads below 100KiB
+    // Check balance before upload
+    const dataSize = new TextEncoder().encode(data).length;
+    const price = await irys.getPrice(dataSize);
+    const balance = await irys.getBalance();
+
+    // Use BigNumber comparison (.lt = less than)
+    if (balance.lt(price)) {
+      throw new Error(
+        `Insufficient Irys balance. Required: ${irys.utils.fromAtomic(price)} ETH, ` +
+        `Available: ${irys.utils.fromAtomic(balance)} ETH. Please fund your account.`
+      );
+    }
+
     const receipt = await irys.upload(data, { tags });
     return receipt;
+  }
+
+  async getBalance(): Promise<{ balance: string; formatted: string }> {
+    const irys = await this.getWebIrys();
+    const balance = await irys.getBalance();
+    return {
+      balance: balance.toString(),
+      formatted: irys.utils.fromAtomic(balance).toString(),
+    };
+  }
+
+  async fundAccount(amount: string): Promise<void> {
+    const irys = await this.getWebIrys();
+    await irys.fund(amount);
+  }
+
+  async getUploadPrice(dataSize: number): Promise<{ price: string; formatted: string }> {
+    const irys = await this.getWebIrys();
+    const price = await irys.getPrice(dataSize);
+    return {
+      price: price.toString(),
+      formatted: irys.utils.fromAtomic(price).toString(),
+    };
   }
 
   // Generic query using GraphQL - Irys mainnet/testnet

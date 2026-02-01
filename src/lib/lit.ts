@@ -1,17 +1,20 @@
 import { LitNodeClient } from "@lit-protocol/lit-node-client";
-import { LitNetwork } from "@lit-protocol/constants";
 import { encryptFile, decryptToUint8Array } from "@lit-protocol/encryption";
 import { SiweMessage } from "siwe";
 import { type WalletClient, getAddress } from "viem";
+import { polygonAmoy } from "viem/chains";
+
+// Lit Network constant
+const LIT_NETWORK = "datil-dev" as const;
 
 export class LitService {
   private client: LitNodeClient;
   public chain: string;
 
-  constructor(chain: string = "polygon") {
+  constructor(chain: string = "polygonAmoy") {
     this.chain = chain;
     this.client = new LitNodeClient({
-      litNetwork: LitNetwork.DatilDev,
+      litNetwork: LIT_NETWORK,
       debug: false,
     });
   }
@@ -36,7 +39,7 @@ export class LitService {
       statement: "Sign in with Ethereum to the app.",
       uri: window.location.origin,
       version: "1",
-      chainId: 137, // Polygon mainnet chain ID for Lit
+      chainId: polygonAmoy.id, // Polygon Amoy testnet chain ID
       issuedAt: now.toISOString(),
       expirationTime: expirationTime,
     });
@@ -94,4 +97,4 @@ export class LitService {
   }
 }
 
-export const litService = new LitService("polygon");
+export const litService = new LitService("polygonAmoy");
