@@ -18,10 +18,13 @@
     "@lit-protocol/lit-node-client": "^7.3.1",
     "@tanstack/react-query": "^5.90.12",
     "ethers": "^6.16.0",
+    "hls.js": "^1.6.15",
+    "livepeer": "^3.5.0",
     "next": "16.0.8",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "siwe": "^3.0.0",
+    "tus-js-client": "^4.3.1",
     "viem": "^2.41.2",
     "zod": "^4.1.13"
   },
