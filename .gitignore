@@ -48,5 +48,6 @@ contracts/lib
 
 # temp
 _bmad
-.claude
-.kiro
+
+**/CLAUDE.md
+!/CLAUDE.md
