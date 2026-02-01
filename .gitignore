@@ -48,3 +48,6 @@ contracts/lib
 
 **/CLAUDE.md
 !/CLAUDE.md
+
+.kiro/
+.claude
