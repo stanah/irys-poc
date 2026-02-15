@@ -2,10 +2,9 @@
 
 import { createContext, useContext, PropsWithChildren } from "react";
 import { useWallet } from "@/hooks/useWallet";
+import type { UnifiedWallet } from "@/types/wallet";
 
-type WalletContextType = ReturnType<typeof useWallet>;
-
-const WalletContext = createContext<WalletContextType | null>(null);
+const WalletContext = createContext<UnifiedWallet | null>(null);
 
 export function WalletProvider({ children }: PropsWithChildren) {
   const wallet = useWallet();
@@ -14,7 +13,7 @@ export function WalletProvider({ children }: PropsWithChildren) {
   );
 }
 
-export function useWalletContext() {
+export function useWalletContext(): UnifiedWallet {
   const context = useContext(WalletContext);
   if (!context) {
     throw new Error("useWalletContext must be used within WalletProvider");

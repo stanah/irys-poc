@@ -1,35 +1,55 @@
 import { z } from "zod";
 
-export const siteConfig = {
-  name: "DecentralizedVideo",
-  description: "Decentralized video streaming platform with Livepeer, Lit Protocol, and Irys",
-  url: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-};
+const ethAddressSchema = z.string().regex(
+  /^0x[a-fA-F0-9]{40}$/,
+  "Must be a valid Ethereum address (0x + 40 hex characters)",
+);
 
-export const envSchema = z.object({
+const clientEnvSchema = z.object({
+  NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   NEXT_PUBLIC_ALCHEMY_API_KEY: z.string().min(1, "Alchemy API Key is required"),
   NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID: z.string().min(1, "WalletConnect Project ID is required"),
   NEXT_PUBLIC_ALCHEMY_GAS_POLICY_ID: z.string().optional(),
-  // Livepeer
   NEXT_PUBLIC_LIVEPEER_API_KEY: z.string().optional(),
-  LIVEPEER_WEBHOOK_SECRET: z.string().optional(),
-  // Smart Contracts
-  NEXT_PUBLIC_TIPPING_CONTRACT: z.string().optional(),
-  NEXT_PUBLIC_PLATFORM_ADDRESS: z.string().optional(),
+  NEXT_PUBLIC_TIPPING_CONTRACT: ethAddressSchema.optional(),
+  NEXT_PUBLIC_PLATFORM_ADDRESS: ethAddressSchema.optional(),
   NEXT_PUBLIC_PLATFORM_FEE_PERCENT: z.coerce.number().default(10),
+  NEXT_PUBLIC_PRIVY_APP_ID: z.string().min(1, "Privy App ID is required"),
+  NEXT_PUBLIC_PIMLICO_API_KEY: z.string().optional(),
 });
 
-// Helper to validate env in client
+const serverEnvSchema = clientEnvSchema.extend({
+  LIVEPEER_WEBHOOK_SECRET: z.string().optional(),
+});
+
+function validateEnv() {
+  const isServer = typeof window === 'undefined';
+  const schema = isServer ? serverEnvSchema : clientEnvSchema;
+  const result = schema.safeParse(process.env);
+  if (!result.success) {
+    console.error('Invalid environment variables:', result.error.flatten().fieldErrors);
+    throw new Error('Invalid environment variables');
+  }
+  return result.data;
+}
+
+export const env = validateEnv();
+
+export const siteConfig = {
+  name: "DecentralizedVideo",
+  description: "Decentralized video streaming platform with Livepeer, Lit Protocol, and Irys",
+  url: env.NEXT_PUBLIC_APP_URL,
+};
+
 export const getEnv = () => {
   return {
-    alchemyApiKey: process.env.NEXT_PUBLIC_ALCHEMY_API_KEY as string,
-    walletConnectProjectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID as string,
-    gasPolicyId: process.env.NEXT_PUBLIC_ALCHEMY_GAS_POLICY_ID,
-    // Livepeer
-    livepeerApiKey: process.env.NEXT_PUBLIC_LIVEPEER_API_KEY,
-    // Contracts
-    tippingContract: process.env.NEXT_PUBLIC_TIPPING_CONTRACT as `0x${string}` | undefined,
-    platformAddress: process.env.NEXT_PUBLIC_PLATFORM_ADDRESS as `0x${string}` | undefined,
-    platformFeePercent: Number(process.env.NEXT_PUBLIC_PLATFORM_FEE_PERCENT || 10),
+    alchemyApiKey: env.NEXT_PUBLIC_ALCHEMY_API_KEY,
+    walletConnectProjectId: env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID,
+    gasPolicyId: env.NEXT_PUBLIC_ALCHEMY_GAS_POLICY_ID,
+    livepeerApiKey: env.NEXT_PUBLIC_LIVEPEER_API_KEY,
+    // Safe narrowing: ethAddressSchema validates 0x hex format at startup
+    tippingContract: env.NEXT_PUBLIC_TIPPING_CONTRACT as `0x${string}` | undefined,
+    platformAddress: env.NEXT_PUBLIC_PLATFORM_ADDRESS as `0x${string}` | undefined,
+    platformFeePercent: env.NEXT_PUBLIC_PLATFORM_FEE_PERCENT,
   };
 };
