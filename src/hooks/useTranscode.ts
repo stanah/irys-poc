@@ -30,22 +30,22 @@ export function useTranscode(): UseTranscodeReturn {
   }, []);
 
   const checkStatus = useCallback(async (assetId: string) => {
-    try {
-      const asset = await livepeerService.getAsset(assetId);
-      setStatus(asset.status);
-      setError(null);
+    const result = await livepeerService.getAsset(assetId);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    const asset = result.data;
+    setStatus(asset.status);
+    setError(null);
 
-      // Stop polling if ready or failed
-      if (asset.status.phase === "ready" || asset.status.phase === "failed") {
-        stopPolling();
+    // Stop polling if ready or failed
+    if (asset.status.phase === "ready" || asset.status.phase === "failed") {
+      stopPolling();
 
-        if (asset.status.phase === "failed") {
-          setError(asset.status.errorMessage || "Transcode failed");
-        }
+      if (asset.status.phase === "failed") {
+        setError(asset.status.errorMessage || "Transcode failed");
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to check status";
-      setError(message);
     }
   }, [stopPolling]);
 

@@ -82,6 +82,28 @@ describe('config', () => {
     });
   });
 
+  describe('IRYS_GRAPHQL_ENDPOINT', () => {
+    it('should default IRYS_GRAPHQL_ENDPOINT to https://uploader.irys.xyz/graphql', async () => {
+      process.env.NEXT_PUBLIC_ALCHEMY_API_KEY = 'test-alchemy-key';
+      process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID = 'test-wc-project-id';
+      process.env.NEXT_PUBLIC_PRIVY_APP_ID = 'test-privy-app-id';
+      delete process.env.NEXT_PUBLIC_IRYS_GRAPHQL_ENDPOINT;
+
+      const { getEnv } = await import('@/lib/config');
+      expect(getEnv().irysGraphqlEndpoint).toBe('https://uploader.irys.xyz/graphql');
+    });
+
+    it('should use custom IRYS_GRAPHQL_ENDPOINT when provided', async () => {
+      process.env.NEXT_PUBLIC_ALCHEMY_API_KEY = 'test-alchemy-key';
+      process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID = 'test-wc-project-id';
+      process.env.NEXT_PUBLIC_PRIVY_APP_ID = 'test-privy-app-id';
+      process.env.NEXT_PUBLIC_IRYS_GRAPHQL_ENDPOINT = 'https://custom-irys.example.com/graphql';
+
+      const { getEnv } = await import('@/lib/config');
+      expect(getEnv().irysGraphqlEndpoint).toBe('https://custom-irys.example.com/graphql');
+    });
+  });
+
   describe('getEnv (backward compatibility)', () => {
     it('should return mapped environment values', async () => {
       process.env.NEXT_PUBLIC_ALCHEMY_API_KEY = 'test-alchemy-key';

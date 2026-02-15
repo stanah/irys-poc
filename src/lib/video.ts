@@ -43,9 +43,9 @@ export class VideoService {
       });
 
       // Create Livepeer asset
-      const { assetId, tusEndpoint } = await livepeerService.createAsset(
-        params.title
-      );
+      const createResult = await livepeerService.createAsset(params.title);
+      if (!createResult.success) throw new Error(createResult.error.message);
+      const { assetId, tusEndpoint } = createResult.data;
 
       // Stage 2: Upload to Livepeer
       onProgress({
@@ -54,13 +54,14 @@ export class VideoService {
         message: "Uploading video...",
       });
 
-      await livepeerService.uploadWithTus(params.file, tusEndpoint, (pct) => {
+      const uploadResult = await livepeerService.uploadWithTus(params.file, tusEndpoint, (pct) => {
         onProgress({
           stage: "uploading",
           percentage: pct,
           message: `Uploading: ${pct}%`,
         });
       });
+      if (!uploadResult.success) throw new Error(uploadResult.error.message);
 
       // Stage 3: Wait for transcoding
       onProgress({
@@ -69,7 +70,7 @@ export class VideoService {
         message: "Transcoding video...",
       });
 
-      const asset = await livepeerService.waitForReady(assetId, (status) => {
+      const readyResult = await livepeerService.waitForReady(assetId, (status) => {
         const pct = status.progress ?? 0;
         onProgress({
           stage: "transcoding",
@@ -77,6 +78,8 @@ export class VideoService {
           message: `Transcoding: ${Math.round(pct * 100)}%`,
         });
       });
+      if (!readyResult.success) throw new Error(readyResult.error.message);
+      const asset = readyResult.data;
 
       // Stage 4: Download HLS manifest and segments
       onProgress({
@@ -85,9 +88,11 @@ export class VideoService {
         message: "Downloading transcoded video...",
       });
 
-      const hlsManifest = await livepeerService.downloadHlsManifest(
+      const hlsResult = await livepeerService.downloadHlsManifest(
         asset.playbackId
       );
+      if (!hlsResult.success) throw new Error(hlsResult.error.message);
+      const hlsManifest = hlsResult.data;
 
       // Generate access control conditions
       const accessControlConditions =
@@ -142,8 +147,9 @@ export class VideoService {
             { name: "Content-Type", value: "application/json" },
             { name: "Type", value: "video-segment" },
           ]);
+          if (!receipt.success) throw new Error(receipt.error.message);
 
-          segmentCids.push(receipt.id);
+          segmentCids.push(receipt.data.id);
         }
 
         renditionData.push({
@@ -215,6 +221,7 @@ export class VideoService {
           ...params.tags.map((tag) => ({ name: "Tag", value: tag })),
         ]
       );
+      if (!metadataReceipt.success) throw new Error(metadataReceipt.error.message);
 
       onProgress({
         stage: "completed",
@@ -222,7 +229,7 @@ export class VideoService {
         message: "Upload complete!",
       });
 
-      return metadataReceipt.id;
+      return metadataReceipt.data.id;
     } catch (error) {
       onProgress({
         stage: "failed",
@@ -428,8 +435,9 @@ export class VideoService {
           { name: "Creator", value: creatorAddress },
         ]
       );
+      if (!receipt.success) throw new Error(receipt.error.message);
 
-      return receipt.id;
+      return receipt.data.id;
     } catch (error) {
       console.warn("Thumbnail extraction failed:", error);
       return "";

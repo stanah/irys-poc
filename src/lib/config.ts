@@ -16,6 +16,7 @@ const clientEnvSchema = z.object({
   NEXT_PUBLIC_PLATFORM_FEE_PERCENT: z.coerce.number().default(10),
   NEXT_PUBLIC_PRIVY_APP_ID: z.string().min(1, "Privy App ID is required"),
   NEXT_PUBLIC_PIMLICO_API_KEY: z.string().optional(),
+  NEXT_PUBLIC_IRYS_GRAPHQL_ENDPOINT: z.string().url().default('https://uploader.irys.xyz/graphql'),
 });
 
 const serverEnvSchema = clientEnvSchema.extend({
@@ -51,5 +52,6 @@ export const getEnv = () => {
     tippingContract: env.NEXT_PUBLIC_TIPPING_CONTRACT as `0x${string}` | undefined,
     platformAddress: env.NEXT_PUBLIC_PLATFORM_ADDRESS as `0x${string}` | undefined,
     platformFeePercent: env.NEXT_PUBLIC_PLATFORM_FEE_PERCENT,
+    irysGraphqlEndpoint: env.NEXT_PUBLIC_IRYS_GRAPHQL_ENDPOINT,
   };
 };

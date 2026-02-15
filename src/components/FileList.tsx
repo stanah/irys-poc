@@ -23,8 +23,12 @@ export const FileList = () => {
     setError("");
 
     try {
-      const edges = await irysService.queryFiles(address);
-      const items: FileItem[] = edges.map((edge: any) => {
+      const result = await irysService.queryFiles(address);
+      if (!result.success) {
+        setError(result.error.message);
+        return;
+      }
+      const items: FileItem[] = result.data.map((edge: any) => {
         const tags = edge.node.tags;
         const sender =
           tags.find((t: any) => t.name === "Sender")?.value || "Unknown";

@@ -37,7 +37,8 @@ describe("useTranscode", () => {
   describe("startPolling", () => {
     it("should start polling and set initial status to waiting", async () => {
       mockGetAsset.mockResolvedValue({
-        status: { phase: "processing", progress: 0.5 },
+        success: true,
+        data: { status: { phase: "processing", progress: 0.5 } },
       });
 
       const { useTranscode } = await import("@/hooks/useTranscode");
@@ -53,7 +54,8 @@ describe("useTranscode", () => {
 
     it("should stop polling when status is ready", async () => {
       mockGetAsset.mockResolvedValue({
-        status: { phase: "ready" },
+        success: true,
+        data: { status: { phase: "ready" } },
       });
 
       const { useTranscode } = await import("@/hooks/useTranscode");
@@ -70,7 +72,8 @@ describe("useTranscode", () => {
 
     it("should stop polling and set error when status is failed", async () => {
       mockGetAsset.mockResolvedValue({
-        status: { phase: "failed", errorMessage: "Transcode error" },
+        success: true,
+        data: { status: { phase: "failed", errorMessage: "Transcode error" } },
       });
 
       const { useTranscode } = await import("@/hooks/useTranscode");
@@ -86,7 +89,8 @@ describe("useTranscode", () => {
 
     it("should use default error message when failed without errorMessage", async () => {
       mockGetAsset.mockResolvedValue({
-        status: { phase: "failed" },
+        success: true,
+        data: { status: { phase: "failed" } },
       });
 
       const { useTranscode } = await import("@/hooks/useTranscode");
@@ -99,8 +103,16 @@ describe("useTranscode", () => {
       expect(result.current.error).toBe("Transcode failed");
     });
 
-    it("should set error when getAsset throws", async () => {
-      mockGetAsset.mockRejectedValue(new Error("API error"));
+    it("should set error when getAsset returns failure Result", async () => {
+      mockGetAsset.mockResolvedValue({
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'ASSET_NOT_FOUND',
+          message: '動画が見つかりません',
+          retryable: false,
+        },
+      });
 
       const { useTranscode } = await import("@/hooks/useTranscode");
       const { result } = renderHook(() => useTranscode(), { wrapper: Wrapper });
@@ -109,7 +121,7 @@ describe("useTranscode", () => {
         result.current.startPolling("asset-123");
       });
 
-      expect(result.current.error).toBe("API error");
+      expect(result.current.error).toBe("動画が見つかりません");
     });
 
     it("should poll at 5 second intervals", async () => {
@@ -117,9 +129,9 @@ describe("useTranscode", () => {
       mockGetAsset.mockImplementation(async () => {
         callCount++;
         if (callCount >= 3) {
-          return { status: { phase: "ready" } };
+          return { success: true, data: { status: { phase: "ready" } } };
         }
-        return { status: { phase: "processing", progress: 0.5 } };
+        return { success: true, data: { status: { phase: "processing", progress: 0.5 } } };
       });
 
       const { useTranscode } = await import("@/hooks/useTranscode");
@@ -150,7 +162,8 @@ describe("useTranscode", () => {
   describe("stopPolling", () => {
     it("should stop polling when called manually", async () => {
       mockGetAsset.mockResolvedValue({
-        status: { phase: "processing", progress: 0.3 },
+        success: true,
+        data: { status: { phase: "processing", progress: 0.3 } },
       });
 
       const { useTranscode } = await import("@/hooks/useTranscode");
@@ -180,7 +193,8 @@ describe("useTranscode", () => {
   describe("restart polling", () => {
     it("should stop existing polling when startPolling is called again", async () => {
       mockGetAsset.mockResolvedValue({
-        status: { phase: "processing", progress: 0.5 },
+        success: true,
+        data: { status: { phase: "processing", progress: 0.5 } },
       });
 
       const { useTranscode } = await import("@/hooks/useTranscode");

@@ -1,42 +1,21 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { useVideo } from "@/hooks/useVideo";
+import { usePipelineOrchestrator, MAX_RETRY_COUNT } from "@/hooks/usePipelineOrchestrator";
+import { useWalletContext } from "@/contexts/WalletContext";
 import { TranscodeProgress } from "./TranscodeProgress";
-import type {
-  UploadVideoParams,
-  VideoCategory,
-  AccessType,
-  RevenueSplit,
-} from "@/types/video";
+import { PipelineErrorDisplay } from "./PipelineErrorDisplay";
+import type { VideoCategory } from "@/types/video";
 
 const VIDEO_CATEGORIES: { value: VideoCategory; label: string }[] = [
-  { value: "gaming", label: "Gaming" },
-  { value: "music", label: "Music" },
-  { value: "education", label: "Education" },
-  { value: "entertainment", label: "Entertainment" },
-  { value: "sports", label: "Sports" },
-  { value: "news", label: "News" },
-  { value: "technology", label: "Technology" },
-  { value: "other", label: "Other" },
-];
-
-const ACCESS_TYPES: { value: AccessType; label: string; description: string }[] = [
-  {
-    value: "public",
-    label: "Public",
-    description: "Anyone can view this video",
-  },
-  {
-    value: "token-gated",
-    label: "NFT Holders Only",
-    description: "Only holders of a specific NFT can view",
-  },
-  {
-    value: "subscription",
-    label: "Subscribers Only",
-    description: "Only channel subscribers can view",
-  },
+  { value: "gaming", label: "ゲーム" },
+  { value: "music", label: "音楽" },
+  { value: "education", label: "教育" },
+  { value: "entertainment", label: "エンターテインメント" },
+  { value: "sports", label: "スポーツ" },
+  { value: "news", label: "ニュース" },
+  { value: "technology", label: "テクノロジー" },
+  { value: "other", label: "その他" },
 ];
 
 interface VideoUploaderProps {
@@ -44,7 +23,8 @@ interface VideoUploaderProps {
 }
 
 export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
-  const { uploadVideo, isUploading, uploadProgress, uploadError } = useVideo();
+  const { state: pipelineState, startUpload, cancelUpload, retryUpload } = usePipelineOrchestrator();
+  const { address } = useWalletContext();
 
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
@@ -52,31 +32,30 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
   const [category, setCategory] = useState<VideoCategory>("other");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
-  const [accessType, setAccessType] = useState<AccessType>("public");
   const [creatorPercent, setCreatorPercent] = useState(85);
+  const [metadataCid, setMetadataCid] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isProcessing = pipelineState.stage !== 'idle' && pipelineState.stage !== 'failed' && pipelineState.stage !== 'completed';
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFile = e.target.files?.[0];
       if (selectedFile) {
-        // Validate file type
         if (!selectedFile.type.startsWith("video/")) {
-          alert("Please select a video file");
+          alert("動画ファイルを選択してください");
           return;
         }
 
-        // Validate file size (max 500MB for demo)
         const maxSize = 500 * 1024 * 1024;
         if (selectedFile.size > maxSize) {
-          alert("File size must be less than 500MB");
+          alert("ファイルサイズは500MB以下にしてください");
           return;
         }
 
         setFile(selectedFile);
 
-        // Auto-fill title from filename
         if (!title) {
           const name = selectedFile.name.replace(/\.[^/.]+$/, "");
           setTitle(name);
@@ -102,43 +81,55 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
     e.preventDefault();
 
     if (!file) {
-      alert("Please select a video file");
+      alert("動画ファイルを選択してください");
       return;
     }
 
     if (!title.trim()) {
-      alert("Please enter a title");
+      alert("タイトルを入力してください");
       return;
     }
 
-    const platformPercent = 10;
-    const revenueSplit: RevenueSplit = {
-      creator: creatorPercent,
-      platform: platformPercent,
-      copyrightHolders: [],
-    };
-
-    // Validate percentages sum to 100
-    if (revenueSplit.creator + revenueSplit.platform !== 100) {
-      alert("Revenue split must sum to 100%");
+    if (!address) {
+      alert("ウォレットを接続してください");
       return;
     }
 
-    const params: UploadVideoParams = {
-      file,
+    setMetadataCid(null);
+    const cid = await startUpload(file, {
       title: title.trim(),
       description: description.trim(),
       category,
       tags,
-      accessType,
-      revenueSplit,
-    };
+      accessType: 'public',
+      creatorAddress: address,
+    });
 
-    const videoId = await uploadVideo(params);
-    if (videoId) {
-      onUploadComplete?.(videoId);
+    if (cid) {
+      setMetadataCid(cid);
+      onUploadComplete?.(cid);
     }
   };
+
+  const handleReset = useCallback(() => {
+    setFile(null);
+    setTitle("");
+    setDescription("");
+    setCategory("other");
+    setTags([]);
+    setTagInput("");
+    setCreatorPercent(85);
+    setMetadataCid(null);
+    cancelUpload();
+  }, [cancelUpload]);
+
+  const handleRetry = useCallback(async () => {
+    const cid = await retryUpload();
+    if (cid) {
+      setMetadataCid(cid);
+      onUploadComplete?.(cid);
+    }
+  }, [retryUpload, onUploadComplete]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -155,14 +146,42 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
     [title]
   );
 
-  // Show progress when uploading
-  if (isUploading && uploadProgress) {
+  // エラー状態: PipelineErrorDisplayを表示
+  if (pipelineState.stage === 'failed' && pipelineState.error) {
+    return (
+      <div className="max-w-2xl mx-auto p-6 bg-white rounded-xl shadow-lg space-y-6">
+        <h2 className="text-xl font-semibold text-center">
+          動画アップロード
+        </h2>
+        <TranscodeProgress
+          pipelineState={pipelineState}
+          onCancel={cancelUpload}
+          onReset={handleReset}
+          metadataCid={metadataCid}
+        />
+        <PipelineErrorDisplay
+          error={pipelineState.error}
+          retryCount={pipelineState.retryCount}
+          maxRetries={MAX_RETRY_COUNT}
+          onRetry={handleRetry}
+          onReset={handleReset}
+        />
+      </div>
+    );
+  }
+
+  if (isProcessing || pipelineState.stage === 'completed') {
     return (
       <div className="max-w-2xl mx-auto p-6 bg-white rounded-xl shadow-lg">
         <h2 className="text-xl font-semibold mb-6 text-center">
-          Uploading Video
+          動画アップロード
         </h2>
-        <TranscodeProgress progress={uploadProgress} />
+        <TranscodeProgress
+          pipelineState={pipelineState}
+          onCancel={cancelUpload}
+          onReset={handleReset}
+          metadataCid={metadataCid}
+        />
       </div>
     );
   }
@@ -172,13 +191,7 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
       onSubmit={handleSubmit}
       className="max-w-2xl mx-auto p-6 bg-white rounded-xl shadow-lg space-y-6"
     >
-      <h2 className="text-xl font-semibold">Upload Video</h2>
-
-      {uploadError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-          {uploadError}
-        </div>
-      )}
+      <h2 className="text-xl font-semibold">動画アップロード</h2>
 
       {/* File Drop Zone */}
       <div
@@ -226,7 +239,7 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
               }}
               className="mt-2 text-red-500 text-sm hover:underline"
             >
-              Remove
+              削除
             </button>
           </div>
         ) : (
@@ -244,9 +257,9 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
               />
             </svg>
-            <p className="font-medium">Drop video here or click to browse</p>
+            <p className="font-medium">動画をドロップまたはクリックして選択</p>
             <p className="text-sm text-gray-500">
-              Max file size: 500MB | Supported: MP4, WebM, MOV
+              最大ファイルサイズ: 500MB | 対応形式: MP4, WebM, MOV
             </p>
           </div>
         )}
@@ -254,34 +267,34 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
 
       {/* Title */}
       <div>
-        <label className="block text-sm font-medium mb-1">Title *</label>
+        <label className="block text-sm font-medium mb-1">タイトル *</label>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={100}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Enter video title"
+          placeholder="動画タイトルを入力"
           required
         />
       </div>
 
       {/* Description */}
       <div>
-        <label className="block text-sm font-medium mb-1">Description</label>
+        <label className="block text-sm font-medium mb-1">説明</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           maxLength={5000}
           rows={4}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-          placeholder="Describe your video..."
+          placeholder="動画の説明を入力..."
         />
       </div>
 
       {/* Category */}
       <div>
-        <label className="block text-sm font-medium mb-1">Category</label>
+        <label className="block text-sm font-medium mb-1">カテゴリ</label>
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value as VideoCategory)}
@@ -297,7 +310,7 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
 
       {/* Tags */}
       <div>
-        <label className="block text-sm font-medium mb-1">Tags</label>
+        <label className="block text-sm font-medium mb-1">タグ</label>
         <div className="flex gap-2 mb-2">
           <input
             type="text"
@@ -310,14 +323,14 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
               }
             }}
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Add a tag and press Enter"
+            placeholder="タグを入力してEnterキーで追加"
           />
           <button
             type="button"
             onClick={handleAddTag}
             className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
           >
-            Add
+            追加
           </button>
         </div>
         {tags.length > 0 && (
@@ -341,40 +354,33 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
         )}
       </div>
 
-      {/* Access Type */}
+      {/* Access Type - Story 2.1では公開のみ */}
       <div>
-        <label className="block text-sm font-medium mb-2">Access Control</label>
+        <label className="block text-sm font-medium mb-2">アクセス設定</label>
         <div className="space-y-2">
-          {ACCESS_TYPES.map((type) => (
-            <label
-              key={type.value}
-              className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                accessType === type.value
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-gray-200 hover:border-gray-300"
-              }`}
-            >
-              <input
-                type="radio"
-                name="accessType"
-                value={type.value}
-                checked={accessType === type.value}
-                onChange={(e) => setAccessType(e.target.value as AccessType)}
-                className="mt-1"
-              />
-              <div>
-                <p className="font-medium">{type.label}</p>
-                <p className="text-sm text-gray-500">{type.description}</p>
-              </div>
-            </label>
-          ))}
+          <label
+            className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer border-blue-500 bg-blue-50"
+          >
+            <input
+              type="radio"
+              name="accessType"
+              value="public"
+              checked
+              readOnly
+              className="mt-1"
+            />
+            <div>
+              <p className="font-medium">公開</p>
+              <p className="text-sm text-gray-500">すべての人がこの動画を視聴できます</p>
+            </div>
+          </label>
         </div>
       </div>
 
       {/* Revenue Split */}
       <div>
         <label className="block text-sm font-medium mb-2">
-          Revenue Split (Creator: {creatorPercent}%, Platform: 10%)
+          収益配分 (クリエイター: {creatorPercent}%, プラットフォーム: 10%)
         </label>
         <input
           type="range"
@@ -393,14 +399,14 @@ export function VideoUploader({ onUploadComplete }: VideoUploaderProps) {
       {/* Submit Button */}
       <button
         type="submit"
-        disabled={!file || isUploading}
+        disabled={!file || isProcessing}
         className={`w-full py-3 rounded-lg font-medium transition-colors ${
-          !file || isUploading
+          !file || isProcessing
             ? "bg-gray-300 text-gray-500 cursor-not-allowed"
             : "bg-blue-500 text-white hover:bg-blue-600"
         }`}
       >
-        {isUploading ? "Uploading..." : "Upload Video"}
+        アップロード開始
       </button>
     </form>
   );

@@ -98,8 +98,12 @@ export const UploadForm = () => {
       ];
 
       const receipt = await irysService.uploadData(uploadData, tags);
+      if (!receipt.success) {
+        setStatus(`Error: ${receipt.error.message}`);
+        return;
+      }
 
-      setStatus(`Uploaded! ID: ${receipt.id}`);
+      setStatus(`Uploaded! ID: ${receipt.data.id}`);
     } catch (e: any) {
       console.error(e);
       setStatus(`Error: ${e.message}`);
