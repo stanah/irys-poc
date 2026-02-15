@@ -1,0 +1,81 @@
+# generated: 2026-02-15
+# project: irys-poc
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-02-15
+project: irys-poc
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 1: プラットフォーム基盤とユーザー認証
+  epic-1: done
+  1-1-project-foundation-security-update: done
+  1-2-aa-login-social: done
+  1-3-metamask-wallet-connection: done
+  1-4-profile-balance-logout: done
+  epic-1-retrospective: optional
+
+  # Epic 2: 公開動画パイプライン（アップロード・再生・コンテンツ発見）
+  epic-2: backlog
+  2-1-video-upload-form-livepeer-tus: backlog
+  2-2-transcode-irys-storage: backlog
+  2-3-irys-deposit-creator-video-list: backlog
+  2-4-public-video-hls-playback: backlog
+  2-5-video-list-tag-category-filtering: backlog
+  2-6-upload-pipeline-error-handling-retry: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: 投げ銭（P2Pダイレクト送金）
+  epic-3: backlog
+  3-1-tipping-send-confirmation: backlog
+  3-2-tipping-balance-error-receipt-notification: backlog
+  3-3-first-tipping-educational-experience: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: 限定動画（暗号化・アクセス制御・復号再生）
+  epic-4: backlog
+  4-1-lit-protocol-naga-migration: backlog
+  4-2-restricted-video-encrypted-upload: backlog
+  4-3-restricted-video-lock-screen-access-conditions: backlog
+  4-4-restricted-video-progressive-decryption-playback: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: E2Eテスト・コスト計測・運用基盤
+  epic-5: backlog
+  5-1-main-pipeline-e2e-tests: backlog
+  5-2-cost-measurement-instrumentation: backlog
+  5-3-status-page-links-poc-completion-checklist: backlog
+  epic-5-retrospective: optional
