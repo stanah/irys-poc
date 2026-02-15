@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Hls from "hls.js";
-import { videoService } from "@/lib/video";
-import { decryptSegment } from "@/lib/encryption";
-import { useWalletContext } from "@/contexts/WalletContext";
-import type { VideoMetadata, EncryptedSegment } from "@/types/video";
+import type { VideoMetadata } from "@/types/video";
 
 interface VideoPlayerProps {
   video: VideoMetadata;
@@ -17,11 +14,8 @@ export function VideoPlayer({ video, autoPlay = false, onError }: VideoPlayerPro
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
 
-  const { address, walletClient } = useWalletContext();
-
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentQuality, setCurrentQuality] = useState<string>("auto");
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
@@ -31,109 +25,97 @@ export function VideoPlayer({ video, autoPlay = false, onError }: VideoPlayerPro
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize player
   const initializePlayer = useCallback(async () => {
-    if (!videoRef.current || !video.renditions.length) return;
+    if (!videoRef.current) return;
 
     setIsLoading(true);
     setError(null);
 
+    const startTime = performance.now();
+
     try {
-      // Check if wallet connected for non-public videos
-      if (video.accessType !== "public" && (!address || !walletClient)) {
-        throw new Error("Please connect your wallet to access this video");
-      }
-
-      // Get decryption access
-      let authSig: unknown = null;
-      if (video.accessType !== "public" && address && walletClient) {
-        const access = await videoService.getDecryptionAccess(
-          video.id,
-          walletClient,
-          address
-        );
-
-        if (!access.canAccess) {
-          throw new Error(access.error || "Access denied");
+      if (video.accessType === "public") {
+        // ===== 公開動画パス（Livepeer非依存、NFR-I6準拠） =====
+        if (!video.hlsManifestCid) {
+          throw new Error("HLSマニフェストが見つかりません");
         }
-        authSig = access.authSig;
-      }
+        const hlsUrl = `https://gateway.irys.xyz/${video.hlsManifestCid}`;
 
-      // Load encrypted segments
-      const selectedRendition = video.renditions[0]; // Use first rendition for now
-      const encryptedSegments = await videoService.loadEncryptedSegments(selectedRendition);
+        if (Hls.isSupported()) {
+          if (hlsRef.current) hlsRef.current.destroy();
 
-      // Create custom loader for decryption
-      if (Hls.isSupported()) {
-        if (hlsRef.current) {
-          hlsRef.current.destroy();
-        }
-
-        // Create a custom loader that decrypts segments
-        const CustomLoader = createCustomLoader(
-          encryptedSegments,
-          video.accessControlConditions,
-          authSig
-        );
-
-        const hls = new Hls({
-          loader: CustomLoader,
-          enableWorker: true,
-          lowLatencyMode: false,
-        });
-
-        // For public videos without encryption, use direct playback URL if available
-        if (video.accessType === "public" && video.hlsManifestCid) {
-          hls.loadSource(`https://gateway.irys.xyz/${video.hlsManifestCid}`);
-        } else {
-          // For encrypted videos, generate a valid HLS playlist
-          const playlist = generateEncryptedPlaylist(
-            selectedRendition,
-            encryptedSegments
-          );
-          const playlistBlob = new Blob([playlist], {
-            type: "application/vnd.apple.mpegurl",
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
           });
-          const playlistUrl = URL.createObjectURL(playlistBlob);
-          hls.loadSource(playlistUrl);
-        }
 
-        hls.attachMedia(videoRef.current);
+          hls.loadSource(hlsUrl);
+          hls.attachMedia(videoRef.current);
 
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          setIsLoading(false);
-          if (autoPlay) {
-            videoRef.current?.play().catch(() => {
-              // Auto-play was prevented
-            });
-          }
-        });
+          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+            const durationMs = Math.round(performance.now() - startTime);
+            console.log(
+              `[METRIC] event=playback_start, duration_ms=${durationMs}, video_type=public, video_id=${video.id}, timestamp=${new Date().toISOString()}`
+            );
 
-        hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) {
-            const message = data.details || "Playback error";
-            setError(message);
-            onError?.(message);
-          }
-        });
+            if (durationMs > 1000) {
+              console.log(
+                `[METRIC] event=playback_slow, duration_ms=${durationMs}, threshold_ms=1000, video_id=${video.id}, timestamp=${new Date().toISOString()}`
+              );
+            }
 
-        hlsRef.current = hls;
-      } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
-        // Native HLS support (Safari)
-        if (video.hlsManifestCid) {
-          videoRef.current.src = `https://gateway.irys.xyz/${video.hlsManifestCid}`;
-          setIsLoading(false);
+            setIsLoading(false);
+            if (autoPlay) {
+              videoRef.current?.play().catch(() => {});
+            }
+          });
+
+          hls.on(Hls.Events.ERROR, (_, data) => {
+            if (data.fatal) {
+              setError("動画の読み込みに失敗しました。再試行してください。");
+              setIsLoading(false);
+              onError?.(data.details || "Playback error");
+            }
+          });
+
+          hlsRef.current = hls;
+        } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
+          // Safari ネイティブHLS
+          videoRef.current.src = hlsUrl;
+
+          videoRef.current.addEventListener(
+            "loadeddata",
+            () => {
+              const durationMs = Math.round(performance.now() - startTime);
+              console.log(
+                `[METRIC] event=playback_start, duration_ms=${durationMs}, video_type=public, video_id=${video.id}, timestamp=${new Date().toISOString()}`
+              );
+
+              if (durationMs > 1000) {
+                console.log(
+                  `[METRIC] event=playback_slow, duration_ms=${durationMs}, threshold_ms=1000, video_id=${video.id}, timestamp=${new Date().toISOString()}`
+                );
+              }
+
+              setIsLoading(false);
+            },
+            { once: true }
+          );
+        } else {
+          throw new Error("お使いのブラウザではHLS再生がサポートされていません");
         }
       } else {
-        throw new Error("HLS playback is not supported in this browser");
+        // ===== 限定動画パス（Story 4.4で実装予定） =====
+        setError("限定動画の再生は現在準備中です");
+        setIsLoading(false);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to load video";
+      const message = err instanceof Error ? err.message : "動画の読み込みに失敗しました";
       setError(message);
       onError?.(message);
       setIsLoading(false);
     }
-  }, [video, address, walletClient, autoPlay, onError]);
+  }, [video, autoPlay, onError]);
 
   useEffect(() => {
     initializePlayer();
@@ -266,13 +248,13 @@ export function VideoPlayer({ video, autoPlay = false, onError }: VideoPlayerPro
                 d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
               />
             </svg>
-            <p className="text-lg font-medium mb-2">Unable to play video</p>
+            <p className="text-lg font-medium mb-2">動画を再生できません</p>
             <p className="text-sm text-gray-300">{error}</p>
             <button
               onClick={initializePlayer}
               className="mt-4 px-4 py-2 bg-white text-black rounded-lg hover:bg-gray-200 transition-colors"
             >
-              Try Again
+              再試行
             </button>
           </div>
         </div>
@@ -370,20 +352,6 @@ export function VideoPlayer({ video, autoPlay = false, onError }: VideoPlayerPro
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Quality */}
-            <select
-              value={currentQuality}
-              onChange={(e) => setCurrentQuality(e.target.value)}
-              className="bg-transparent text-white text-sm border border-gray-500 rounded px-2 py-1"
-            >
-              <option value="auto">Auto</option>
-              {video.renditions.map((r) => (
-                <option key={r.quality} value={r.quality}>
-                  {r.quality}
-                </option>
-              ))}
-            </select>
-
             {/* Fullscreen */}
             <button
               onClick={toggleFullscreen}
@@ -404,88 +372,4 @@ export function VideoPlayer({ video, autoPlay = false, onError }: VideoPlayerPro
       </div>
     </div>
   );
-}
-
-/**
- * Generate a valid HLS playlist for encrypted video segments
- */
-function generateEncryptedPlaylist(
-  rendition: VideoMetadata["renditions"][0],
-  segments: Map<string, EncryptedSegment>
-): string {
-  const segmentCount = segments.size;
-  const lines = [
-    "#EXTM3U",
-    "#EXT-X-VERSION:3",
-    "#EXT-X-TARGETDURATION:10",
-    "#EXT-X-MEDIA-SEQUENCE:0",
-    "#EXT-X-PLAYLIST-TYPE:VOD",
-  ];
-
-  // Add segment entries
-  for (let i = 0; i < segmentCount; i++) {
-    lines.push(`#EXTINF:10.0,`);
-    lines.push(`segment_${i}.enc`);
-  }
-
-  lines.push("#EXT-X-ENDLIST");
-  return lines.join("\n");
-}
-
-// Create a custom HLS.js loader that decrypts segments
-function createCustomLoader(
-  encryptedSegments: Map<string, EncryptedSegment>,
-  accessControlConditions: VideoMetadata["accessControlConditions"],
-  authSig: unknown
-) {
-  return class CustomLoader extends Hls.DefaultConfig.loader {
-    async load(
-      context: any,
-      config: any,
-      callbacks: any
-    ) {
-      const url = context.url;
-      // Extract segment key, removing any query strings or blob URL prefixes
-      let segmentKey = url.split("/").pop() || "";
-      segmentKey = segmentKey.split("?")[0]; // Remove query string if any
-
-      // Check if this is an encrypted segment
-      const encrypted = encryptedSegments.get(segmentKey);
-
-      if (encrypted && authSig) {
-        try {
-          const decrypted = await decryptSegment(
-            encrypted,
-            accessControlConditions,
-            authSig
-          );
-
-          const stats = {
-            aborted: false,
-            loaded: decrypted.byteLength,
-            total: decrypted.byteLength,
-          };
-
-          callbacks.onSuccess(
-            {
-              url: context.url,
-              data: decrypted,
-            },
-            stats,
-            context,
-            null
-          );
-        } catch (error) {
-          callbacks.onError(
-            { code: 2, text: "Decryption failed" },
-            context,
-            null
-          );
-        }
-      } else {
-        // Use default loader for non-encrypted content
-        super.load(context, config, callbacks);
-      }
-    }
-  };
 }

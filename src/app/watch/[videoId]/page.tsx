@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useWalletContext } from "@/contexts/WalletContext";
 import { Login } from "@/components/Login";
 import { VideoPlayer } from "@/components/video/VideoPlayer";
 import { TippingWidget } from "@/components/monetization/TippingWidget";
-import { videoService } from "@/lib/video";
-import type { VideoMetadata } from "@/types/video";
+import { useVideoMetadata } from "@/hooks/useVideoMetadata";
 
 function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString("en-US", {
+  return new Date(timestamp).toLocaleDateString("ja-JP", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -27,43 +25,7 @@ export default function WatchPage() {
   const videoId = params.videoId as string;
 
   const { isConnected } = useWalletContext();
-  const [video, setVideo] = useState<VideoMetadata | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
-
-  useEffect(() => {
-    if (!videoId) return;
-
-    const fetchVideo = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const metadata = await videoService.getVideoMetadata(videoId);
-        if (!metadata) {
-          throw new Error("Video not found");
-        }
-        setVideo(metadata);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load video");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchVideo();
-  }, [videoId]);
-
-  if (!mounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
-      </div>
-    );
-  }
+  const { video, isLoading, error } = useVideoMetadata(videoId);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -113,7 +75,7 @@ export default function WatchPage() {
               href="/"
               className="text-blue-500 hover:underline"
             >
-              Go back home
+              ホームに戻る
             </Link>
           </div>
         ) : video ? (
@@ -169,7 +131,7 @@ export default function WatchPage() {
                                 clipRule="evenodd"
                               />
                             </svg>
-                            Subscribers Only
+                            限定公開
                           </>
                         )}
                       </span>
@@ -194,7 +156,7 @@ export default function WatchPage() {
                 {/* Description */}
                 {video.description && (
                   <div className="border-t pt-4">
-                    <h3 className="font-medium mb-2">Description</h3>
+                    <h3 className="font-medium mb-2">説明</h3>
                     <p className="text-gray-600 whitespace-pre-wrap">
                       {video.description}
                     </p>
@@ -203,21 +165,21 @@ export default function WatchPage() {
 
                 {/* Revenue split info */}
                 <div className="border-t pt-4">
-                  <h3 className="font-medium mb-2">Revenue Split</h3>
+                  <h3 className="font-medium mb-2">収益分配</h3>
                   <div className="flex gap-4 text-sm">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 bg-green-500 rounded-full" />
-                      <span>Creator: {video.revenueSplit.creator}%</span>
+                      <span>クリエイター: {video.revenueSplit.creator}%</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 bg-blue-500 rounded-full" />
-                      <span>Platform: {video.revenueSplit.platform}%</span>
+                      <span>プラットフォーム: {video.revenueSplit.platform}%</span>
                     </div>
                     {video.revenueSplit.copyrightHolders.length > 0 && (
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-purple-500 rounded-full" />
                         <span>
-                          Copyright:{" "}
+                          著作権:{" "}
                           {video.revenueSplit.copyrightHolders.reduce(
                             (sum, h) => sum + h.percentage,
                             0
@@ -233,30 +195,32 @@ export default function WatchPage() {
 
             {/* Sidebar */}
             <div className="space-y-4">
-              {/* Tipping widget */}
-              <TippingWidget
-                videoId={video.id}
-                creatorAddress={video.creatorAddress}
-              />
+              {/* Tipping widget — ウォレット接続時のみ表示 */}
+              {isConnected && (
+                <TippingWidget
+                  videoId={video.id}
+                  creatorAddress={video.creatorAddress}
+                />
+              )}
 
               {/* Storage info */}
               <div className="bg-white rounded-xl p-4">
-                <h3 className="font-medium mb-3">Storage Info</h3>
+                <h3 className="font-medium mb-3">ストレージ情報</h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Storage</span>
-                    <span className="font-mono">Irys (Permanent)</span>
+                    <span className="text-gray-500">ストレージ</span>
+                    <span className="font-mono">Irys (永続保存)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Encryption</span>
+                    <span className="text-gray-500">暗号化</span>
                     <span className="font-mono">Lit Protocol</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Transcode</span>
+                    <span className="text-gray-500">トランスコード</span>
                     <span className="font-mono">Livepeer HLS</span>
                   </div>
                   <div className="flex justify-between items-start">
-                    <span className="text-gray-500">Transaction ID</span>
+                    <span className="text-gray-500">トランザクションID</span>
                     <a
                       href={`https://gateway.irys.xyz/${video.id}`}
                       target="_blank"
