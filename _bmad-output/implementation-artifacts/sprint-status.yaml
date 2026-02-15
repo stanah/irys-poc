@@ -49,13 +49,13 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: 公開動画パイプライン（アップロード・再生・コンテンツ発見）
-  epic-2: backlog
-  2-1-video-upload-form-livepeer-tus: backlog
-  2-2-transcode-irys-storage: backlog
-  2-3-irys-deposit-creator-video-list: backlog
-  2-4-public-video-hls-playback: backlog
-  2-5-video-list-tag-category-filtering: backlog
-  2-6-upload-pipeline-error-handling-retry: backlog
+  epic-2: done
+  2-1-video-upload-form-livepeer-tus: done
+  2-2-transcode-irys-storage: done
+  2-3-irys-deposit-creator-video-list: done
+  2-4-public-video-hls-playback: done
+  2-5-video-list-tag-category-filtering: done
+  2-6-upload-pipeline-error-handling-retry: done
   epic-2-retrospective: optional
 
   # Epic 3: 投げ銭（P2Pダイレクト送金）
