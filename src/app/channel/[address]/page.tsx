@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useWalletContext } from "@/contexts/WalletContext";
 import { Login } from "@/components/Login";
 import { VideoCard } from "@/components/video/VideoCard";
-import { useVideo } from "@/hooks/useVideo";
+import { useVideoList } from "@/hooks/useVideoList";
 
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -17,20 +17,17 @@ export default function ChannelPage() {
   const channelAddress = params.address as string;
 
   const { address: currentUserAddress } = useWalletContext();
-  const { videos, isLoading, queryError, fetchVideos } = useVideo();
+  const { videos, isLoading, error, fetchVideos } = useVideoList({ creatorAddress: channelAddress });
 
   const [mounted, setMounted] = useState(false);
 
   const isOwnChannel =
     currentUserAddress?.toLowerCase() === channelAddress?.toLowerCase();
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    if (channelAddress) {
-      fetchVideos({ creatorAddress: channelAddress });
-    }
-  }, [fetchVideos, channelAddress]);
+  // useVideoList handles initial fetch via initialParams
 
   if (!mounted) {
     return (
@@ -138,9 +135,9 @@ export default function ChannelPage() {
             <div className="flex justify-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
             </div>
-          ) : queryError ? (
+          ) : error ? (
             <div className="text-center py-20">
-              <p className="text-red-500 mb-4">{queryError}</p>
+              <p className="text-red-500 mb-4">{error}</p>
               <button
                 onClick={() => fetchVideos({ creatorAddress: channelAddress })}
                 className="text-blue-500 hover:underline"

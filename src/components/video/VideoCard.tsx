@@ -56,33 +56,6 @@ const categoryColors: Record<string, string> = {
   other: "bg-gray-100 text-gray-700",
 };
 
-const accessIcons: Record<string, React.ReactNode> = {
-  public: null,
-  "token-gated": (
-    <svg
-      className="w-4 h-4 text-amber-500"
-      fill="currentColor"
-      viewBox="0 0 20 20"
-    >
-      <title>NFT Gated</title>
-      <path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2H7V7a3 3 0 015.905-.75 1 1 0 001.937-.5A5.002 5.002 0 0010 2z" />
-    </svg>
-  ),
-  subscription: (
-    <svg
-      className="w-4 h-4 text-indigo-500"
-      fill="currentColor"
-      viewBox="0 0 20 20"
-    >
-      <title>Subscribers Only</title>
-      <path
-        fillRule="evenodd"
-        d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-        clipRule="evenodd"
-      />
-    </svg>
-  ),
-};
 
 export function VideoCard({ video }: VideoCardProps) {
   const categoryClass = categoryColors[video.category] || categoryColors.other;
@@ -124,10 +97,17 @@ export function VideoCard({ video }: VideoCardProps) {
             {formatDuration(video.duration)}
           </div>
 
-          {/* Access icon */}
-          {video.accessType !== "public" && (
-            <div className="absolute top-2 right-2 bg-white/90 rounded-full p-1">
-              {accessIcons[video.accessType]}
+          {/* Access type badge */}
+          {video.accessType === "public" ? (
+            <div className="absolute top-2 left-2 bg-green-500/90 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+              公開
+            </div>
+          ) : (
+            <div className="absolute top-2 left-2 bg-amber-500/90 text-white text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2H7V7a3 3 0 015.905-.75 1 1 0 001.937-.5A5.002 5.002 0 0010 2z" />
+              </svg>
+              限定
             </div>
           )}
 
@@ -142,7 +122,15 @@ export function VideoCard({ video }: VideoCardProps) {
           </h3>
 
           <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span title={video.creatorAddress}>
+            <span
+              title={video.creatorAddress}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.location.href = `/channel/${video.creatorAddress}`;
+              }}
+              className="hover:text-blue-500 hover:underline cursor-pointer"
+            >
               {truncateAddress(video.creatorAddress)}
             </span>
             <span>•</span>

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 // Mock next/link
@@ -77,24 +77,23 @@ describe("VideoCard", () => {
       expect(screen.queryByAltText("Test Video Title")).toBeNull();
     });
 
-    it("should show access icon for token-gated videos", () => {
+    it("should show 限定 badge for token-gated videos", () => {
       render(
         <VideoCard video={{ ...baseVideo, accessType: "token-gated" }} />
       );
-      expect(screen.getByTitle("NFT Gated")).toBeDefined();
+      expect(screen.getByText("限定")).toBeDefined();
     });
 
-    it("should show access icon for subscription videos", () => {
+    it("should show 限定 badge for subscription videos", () => {
       render(
         <VideoCard video={{ ...baseVideo, accessType: "subscription" }} />
       );
-      expect(screen.getByTitle("Subscribers Only")).toBeDefined();
+      expect(screen.getByText("限定")).toBeDefined();
     });
 
-    it("should not show access icon for public videos", () => {
+    it("should show 公開 badge for public videos", () => {
       render(<VideoCard video={baseVideo} />);
-      expect(screen.queryByTitle("NFT Gated")).toBeNull();
-      expect(screen.queryByTitle("Subscribers Only")).toBeNull();
+      expect(screen.getByText("公開")).toBeDefined();
     });
 
     it("should show tips when totalTips > 0", () => {
