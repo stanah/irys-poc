@@ -1,6 +1,8 @@
 import { Livepeer } from "livepeer";
 import * as tus from "tus-js-client";
 import { getEnv } from "./config";
+import type { LivepeerService as LivepeerServiceInterface } from "@/types/services";
+import type { Result } from "@/types/errors";
 import type {
   LivepeerAsset,
   LivepeerUploadResponse,
@@ -8,73 +10,166 @@ import type {
   HLSSegment,
 } from "@/types/video";
 
-/**
- * LivepeerService - Handles video transcoding via Livepeer Studio API
- */
-export class LivepeerService {
+export class LivepeerServiceImpl implements LivepeerServiceInterface {
   private client: Livepeer | null = null;
+  private static readonly TIMEOUT_MS = 30_000; // NFR-I3: Livepeer 30秒
 
-  private getClient(): Livepeer {
+  private getClient(): Result<Livepeer> {
     if (!this.client) {
       const apiKey = getEnv().livepeerApiKey;
       if (!apiKey) {
-        throw new Error("Livepeer API key is not configured");
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'API_KEY_MISSING',
+            message: 'Livepeer APIキーが設定されていません',
+            retryable: false,
+          },
+        };
       }
       this.client = new Livepeer({ apiKey });
     }
-    return this.client;
+    return { success: true, data: this.client };
   }
 
-  /**
-   * Create a new asset and get upload URL for resumable upload
-   * @param name Asset name (usually video title)
-   * @returns Upload URL and asset ID
-   */
-  async createAsset(name: string): Promise<LivepeerUploadResponse> {
-    const client = this.getClient();
-
-    const response = await client.asset.create({
-      name,
-      storage: {
-        ipfs: false, // We use Irys instead
-      },
-      playbackPolicy: {
-        type: "public",
-      },
-    } as any);
-
-    if (!response.data?.asset?.id) {
-      throw new Error("Failed to create Livepeer asset");
+  async createAsset(
+    name: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Result<LivepeerUploadResponse>> {
+    if (options?.signal?.aborted) {
+      return {
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'ABORTED',
+          message: '操作がキャンセルされました',
+          retryable: true,
+        },
+      };
     }
 
-    const asset = response.data.asset;
-    const tusEndpoint = response.data.tusEndpoint;
-
-    if (!tusEndpoint) {
-      throw new Error("No TUS endpoint provided");
+    const clientResult = this.getClient();
+    if (!clientResult.success) {
+      return clientResult;
     }
+    const client = clientResult.data;
 
-    return {
-      assetId: asset.id,
-      uploadUrl: tusEndpoint,
-      tusEndpoint,
-      task: response.data.task ? { id: response.data.task.id } : undefined,
-    };
+    try {
+      const timeoutSignal = AbortSignal.timeout(LivepeerServiceImpl.TIMEOUT_MS);
+      const combinedSignal = options?.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
+
+      const response = await Promise.race([
+        client.asset.create({
+          name,
+          storage: {
+            ipfs: false,
+          },
+          playbackPolicy: {
+            type: "public",
+          },
+        } as Parameters<typeof client.asset.create>[0]),
+        new Promise<never>((_, reject) => {
+          combinedSignal.addEventListener('abort', () =>
+            reject(new DOMException('Timeout', 'TimeoutError'))
+          );
+        }),
+      ]);
+
+      if (!response.data?.asset?.id) {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'CREATE_ASSET_FAILED',
+            message: 'アセット作成に失敗しました',
+            retryable: true,
+          },
+        };
+      }
+
+      const asset = response.data.asset;
+      const tusEndpoint = response.data.tusEndpoint;
+
+      if (!tusEndpoint) {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'NO_TUS_ENDPOINT',
+            message: 'アップロード先が取得できませんでした',
+            retryable: true,
+          },
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          assetId: asset.id,
+          uploadUrl: tusEndpoint,
+          tusEndpoint,
+          task: response.data.task ? { id: response.data.task.id } : undefined,
+        },
+      };
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'TimeoutError') {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'TIMEOUT',
+            message: 'アセット作成がタイムアウトしました',
+            retryable: true,
+            cause: e,
+          },
+        };
+      }
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'ABORTED',
+            message: '操作がキャンセルされました',
+            retryable: true,
+          },
+        };
+      }
+      return {
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'CREATE_ASSET_FAILED',
+          message: 'アセット作成に失敗しました',
+          retryable: true,
+          cause: e,
+        },
+      };
+    }
   }
 
-  /**
-   * Upload video file using TUS resumable upload protocol
-   * @param file Video file to upload
-   * @param tusEndpoint TUS endpoint URL
-   * @param onProgress Progress callback
-   * @returns Promise that resolves when upload is complete
-   */
   async uploadWithTus(
     file: File,
     tusEndpoint: string,
-    onProgress?: (percentage: number) => void
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
+    onProgress?: (percentage: number) => void,
+    options?: { signal?: AbortSignal }
+  ): Promise<Result<void>> {
+    if (options?.signal?.aborted) {
+      return {
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'ABORTED',
+          message: '操作がキャンセルされました',
+          retryable: true,
+        },
+      };
+    }
+
+    return new Promise((resolve) => {
       const upload = new tus.Upload(file, {
         endpoint: tusEndpoint,
         retryDelays: [0, 3000, 5000, 10000, 20000],
@@ -83,125 +178,293 @@ export class LivepeerService {
           filetype: file.type,
         },
         onError: (error) => {
-          reject(error);
+          resolve({
+            success: false,
+            error: {
+              category: 'livepeer',
+              code: 'UPLOAD_FAILED',
+              message: '動画のアップロードに失敗しました',
+              retryable: true,
+              cause: error,
+            },
+          });
         },
         onProgress: (bytesUploaded, bytesTotal) => {
           const percentage = Math.round((bytesUploaded / bytesTotal) * 100);
+          console.log(
+            `[METRIC] event=upload_progress, percentage=${percentage}, stage=uploading, timestamp=${new Date().toISOString()}`
+          );
           onProgress?.(percentage);
         },
         onSuccess: () => {
-          resolve();
+          resolve({ success: true, data: undefined });
         },
       });
+
+      const onAbort = () => {
+        upload.abort();
+        resolve({
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'UPLOAD_CANCELLED',
+            message: 'アップロードがキャンセルされました',
+            retryable: true,
+          },
+        });
+      };
+      options?.signal?.addEventListener('abort', onAbort, { once: true });
 
       upload.start();
     });
   }
 
-  /**
-   * Get asset details including transcode status
-   * @param assetId Livepeer asset ID
-   */
-  async getAsset(assetId: string): Promise<LivepeerAsset> {
-    const client = this.getClient();
-    const response = await client.asset.get(assetId);
-
-    if (!response.asset) {
-      throw new Error("Asset not found");
+  async getAsset(
+    assetId: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Result<LivepeerAsset>> {
+    if (options?.signal?.aborted) {
+      return {
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'ABORTED',
+          message: '操作がキャンセルされました',
+          retryable: true,
+        },
+      };
     }
 
-    const asset = response.asset;
+    const clientResult = this.getClient();
+    if (!clientResult.success) {
+      return clientResult;
+    }
+    const client = clientResult.data;
 
-    return {
-      id: asset.id,
-      playbackId: asset.playbackId || "",
-      status: {
-        phase: this.mapPhase(asset.status?.phase),
-        errorMessage: asset.status?.errorMessage,
-        progress: asset.status?.progress,
-      },
-      playbackUrl: asset.playbackUrl,
-      downloadUrl: asset.downloadUrl,
-    };
+    try {
+      const response = await client.asset.get(assetId);
+
+      if (!response.asset) {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'ASSET_NOT_FOUND',
+            message: '動画が見つかりません',
+            retryable: false,
+          },
+        };
+      }
+
+      const asset = response.asset;
+
+      return {
+        success: true,
+        data: {
+          id: asset.id,
+          playbackId: asset.playbackId || "",
+          status: {
+            phase: this.mapPhase(asset.status?.phase),
+            errorMessage: asset.status?.errorMessage,
+            progress: asset.status?.progress,
+          },
+          playbackUrl: asset.playbackUrl,
+          downloadUrl: asset.downloadUrl,
+        },
+      };
+    } catch (e) {
+      return {
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'ASSET_NOT_FOUND',
+          message: '動画が見つかりません',
+          retryable: false,
+          cause: e,
+        },
+      };
+    }
   }
 
-  /**
-   * Wait for asset to be ready (transcoding complete)
-   * @param assetId Livepeer asset ID
-   * @param onProgress Progress callback
-   * @param maxWaitMs Maximum wait time in milliseconds
-   */
   async waitForReady(
     assetId: string,
     onProgress?: (status: LivepeerAsset["status"]) => void,
-    maxWaitMs: number = 600000 // 10 minutes
-  ): Promise<LivepeerAsset> {
+    options?: { signal?: AbortSignal; maxWaitMs?: number }
+  ): Promise<Result<LivepeerAsset>> {
+    if (options?.signal?.aborted) {
+      return {
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'ABORTED',
+          message: '操作がキャンセルされました',
+          retryable: true,
+        },
+      };
+    }
+
+    const maxWaitMs = options?.maxWaitMs ?? 600000;
     const startTime = Date.now();
-    const pollInterval = 5000; // 5 seconds
+    const pollInterval = 5000;
 
     while (Date.now() - startTime < maxWaitMs) {
-      const asset = await this.getAsset(assetId);
+      if (options?.signal?.aborted) {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'ABORTED',
+            message: '操作がキャンセルされました',
+            retryable: true,
+          },
+        };
+      }
+
+      const assetResult = await this.getAsset(assetId, options);
+      if (!assetResult.success) {
+        return assetResult;
+      }
+
+      const asset = assetResult.data;
       onProgress?.(asset.status);
 
       if (asset.status.phase === "ready") {
-        return asset;
+        return { success: true, data: asset };
       }
 
       if (asset.status.phase === "failed") {
-        throw new Error(
-          `Transcode failed: ${asset.status.errorMessage || "Unknown error"}`
-        );
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'TRANSCODE_FAILED',
+            message: 'トランスコードに失敗しました',
+            retryable: false,
+            cause: asset.status.errorMessage,
+          },
+        };
       }
 
       await this.sleep(pollInterval);
     }
 
-    throw new Error("Transcode timeout");
-  }
-
-  /**
-   * Download HLS manifest and segments from Livepeer
-   * @param playbackId Livepeer playback ID
-   */
-  async downloadHlsManifest(playbackId: string): Promise<HLSManifest> {
-    const baseUrl = `https://livepeer.studio/api/playback/${playbackId}`;
-
-    // Get playback info
-    const infoResponse = await fetch(baseUrl);
-    if (!infoResponse.ok) {
-      throw new Error("Failed to get playback info");
-    }
-
-    const playbackInfo = await infoResponse.json();
-    const hlsUrl = playbackInfo.meta?.source?.[0]?.hrn === "HLS (TS)"
-      ? playbackInfo.meta?.source?.[0]?.url
-      : null;
-
-    if (!hlsUrl) {
-      throw new Error("HLS URL not available");
-    }
-
-    // Fetch master playlist
-    const masterResponse = await fetch(hlsUrl);
-    if (!masterResponse.ok) {
-      throw new Error("Failed to fetch master playlist");
-    }
-
-    const masterPlaylist = await masterResponse.text();
-    const renditions = await this.parseAndFetchRenditions(hlsUrl, masterPlaylist);
-
     return {
-      masterPlaylist,
-      renditions,
+      success: false,
+      error: {
+        category: 'livepeer',
+        code: 'TRANSCODE_TIMEOUT',
+        message: 'トランスコードがタイムアウトしました',
+        retryable: true,
+      },
     };
   }
 
-  /**
-   * Parse HLS master playlist and fetch all rendition playlists with segments
-   */
+  async downloadHlsManifest(
+    playbackId: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<Result<HLSManifest>> {
+    if (options?.signal?.aborted) {
+      return {
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'ABORTED',
+          message: '操作がキャンセルされました',
+          retryable: true,
+        },
+      };
+    }
+
+    try {
+      const baseUrl = `https://livepeer.studio/api/playback/${playbackId}`;
+
+      const infoResponse = await fetch(baseUrl, { signal: options?.signal });
+      if (!infoResponse.ok) {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'PLAYBACK_INFO_FAILED',
+            message: '再生情報の取得に失敗しました',
+            retryable: true,
+          },
+        };
+      }
+
+      const playbackInfo = await infoResponse.json();
+      const hlsUrl =
+        playbackInfo.meta?.source?.[0]?.hrn === "HLS (TS)"
+          ? playbackInfo.meta?.source?.[0]?.url
+          : null;
+
+      if (!hlsUrl) {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'HLS_URL_NOT_AVAILABLE',
+            message: 'HLS URLが利用できません',
+            retryable: true,
+          },
+        };
+      }
+
+      const masterResponse = await fetch(hlsUrl, { signal: options?.signal });
+      if (!masterResponse.ok) {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'MASTER_PLAYLIST_FAILED',
+            message: 'マスタープレイリストの取得に失敗しました',
+            retryable: true,
+          },
+        };
+      }
+
+      const masterPlaylist = await masterResponse.text();
+      const renditions = await this.parseAndFetchRenditions(
+        hlsUrl,
+        masterPlaylist,
+        options
+      );
+
+      return {
+        success: true,
+        data: {
+          masterPlaylist,
+          renditions,
+        },
+      };
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        return {
+          success: false,
+          error: {
+            category: 'livepeer',
+            code: 'ABORTED',
+            message: '操作がキャンセルされました',
+            retryable: true,
+          },
+        };
+      }
+      return {
+        success: false,
+        error: {
+          category: 'livepeer',
+          code: 'HLS_DOWNLOAD_FAILED',
+          message: 'HLSマニフェストのダウンロードに失敗しました',
+          retryable: true,
+          cause: e,
+        },
+      };
+    }
+  }
+
   private async parseAndFetchRenditions(
     baseUrl: string,
-    masterPlaylist: string
+    masterPlaylist: string,
+    options?: { signal?: AbortSignal }
   ): Promise<HLSManifest["renditions"]> {
     const lines = masterPlaylist.split("\n");
     const renditions: HLSManifest["renditions"] = [];
@@ -214,7 +477,6 @@ export class LivepeerService {
       const line = lines[i].trim();
 
       if (line.startsWith("#EXT-X-STREAM-INF:")) {
-        // Parse stream info
         const bandwidthMatch = line.match(/BANDWIDTH=(\d+)/);
         const resolutionMatch = line.match(/RESOLUTION=(\d+)x(\d+)/);
 
@@ -227,13 +489,13 @@ export class LivepeerService {
           currentQuality = this.heightToQuality(height);
         }
       } else if (line && !line.startsWith("#") && currentQuality) {
-        // This is a playlist URL
         const playlistUrl = line.startsWith("http")
           ? line
           : baseUrlPath + line;
 
         const { playlist, segments } = await this.fetchPlaylistAndSegments(
-          playlistUrl
+          playlistUrl,
+          options
         );
 
         renditions.push({
@@ -251,20 +513,19 @@ export class LivepeerService {
     return renditions;
   }
 
-  /**
-   * Fetch a rendition playlist and its segments
-   */
   private async fetchPlaylistAndSegments(
-    playlistUrl: string
+    playlistUrl: string,
+    options?: { signal?: AbortSignal }
   ): Promise<{ playlist: string; segments: HLSSegment[] }> {
-    const response = await fetch(playlistUrl);
+    const response = await fetch(playlistUrl, { signal: options?.signal });
     if (!response.ok) {
       throw new Error(`Failed to fetch playlist: ${playlistUrl}`);
     }
 
     const playlist = await response.text();
     const segments: HLSSegment[] = [];
-    const baseUrlPath = playlistUrl.substring(0, playlistUrl.lastIndexOf("/") + 1);
+    const baseUrlPath =
+      playlistUrl.substring(0, playlistUrl.lastIndexOf("/") + 1);
     const lines = playlist.split("\n");
 
     let currentDuration = 0;
@@ -278,13 +539,13 @@ export class LivepeerService {
           currentDuration = parseFloat(durationMatch[1]);
         }
       } else if (trimmed && !trimmed.startsWith("#") && currentDuration > 0) {
-        // This is a segment URL
         const segmentUrl = trimmed.startsWith("http")
           ? trimmed
           : baseUrlPath + trimmed;
 
-        // Fetch segment data
-        const segmentResponse = await fetch(segmentUrl);
+        const segmentResponse = await fetch(segmentUrl, {
+          signal: options?.signal,
+        });
         if (!segmentResponse.ok) {
           throw new Error(`Failed to fetch segment: ${segmentUrl}`);
         }
@@ -304,9 +565,6 @@ export class LivepeerService {
     return { playlist, segments };
   }
 
-  /**
-   * Map Livepeer status phase to our type
-   */
   private mapPhase(
     phase?: string
   ): "waiting" | "processing" | "ready" | "failed" {
@@ -325,9 +583,6 @@ export class LivepeerService {
     }
   }
 
-  /**
-   * Convert height to quality string
-   */
   private heightToQuality(height: number): string {
     if (height >= 1080) return "1080p";
     if (height >= 720) return "720p";
@@ -335,12 +590,12 @@ export class LivepeerService {
     return "360p";
   }
 
-  /**
-   * Sleep utility
-   */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
-export const livepeerService = new LivepeerService();
+export const livepeerServiceImpl = new LivepeerServiceImpl();
+
+// 後方互換: video.ts 等の既存コードが参照している
+export const livepeerService = livepeerServiceImpl;
