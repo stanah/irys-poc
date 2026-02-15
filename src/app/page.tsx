@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useWalletContext } from "@/contexts/WalletContext";
 import { Login } from "@/components/Login";
 import { VideoCard } from "@/components/video/VideoCard";
-import { useVideo } from "@/hooks/useVideo";
+import { useVideoList } from "@/hooks/useVideoList";
 import type { VideoCategory } from "@/types/video";
 
 const CATEGORIES: { value: VideoCategory | "all"; label: string }[] = [
@@ -20,11 +20,12 @@ const CATEGORIES: { value: VideoCategory | "all"; label: string }[] = [
 
 export default function Home() {
   const { isConnected } = useWalletContext();
-  const { videos, isLoading, queryError, fetchVideos } = useVideo();
+  const { videos, isLoading, error, fetchVideos } = useVideoList();
 
   const [mounted, setMounted] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<VideoCategory | "all">("all");
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -59,25 +60,33 @@ export default function Home() {
 
           <div className="flex items-center gap-4">
             {isConnected && (
-              <Link
-                href="/upload"
-                className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              <>
+                <Link
+                  href="/upload"
+                  className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-                Upload
-              </Link>
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                  Upload
+                </Link>
+                <Link
+                  href="/my-videos"
+                  className="text-gray-700 hover:text-blue-600 transition-colors font-medium"
+                >
+                  マイ動画
+                </Link>
+              </>
             )}
             <Login />
           </div>
@@ -133,9 +142,9 @@ export default function Home() {
           <div className="flex justify-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
           </div>
-        ) : queryError ? (
+        ) : error ? (
           <div className="text-center py-20">
-            <p className="text-red-500 mb-4">{queryError}</p>
+            <p className="text-red-500 mb-4">{error}</p>
             <button
               onClick={() => fetchVideos()}
               className="text-blue-500 hover:underline"
